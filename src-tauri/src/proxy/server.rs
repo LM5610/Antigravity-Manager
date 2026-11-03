@@ -906,6 +906,20 @@ impl AxumServer {
             .route("/proxy/cloudflared/start", post(admin_cloudflared_start))
             .route("/proxy/cloudflared/stop", post(admin_cloudflared_stop))
             .route("/system/open-folder", post(admin_open_folder))
+            // Instances routes
+            .route(
+                "/instances",
+                get(admin_list_instances).post(admin_create_instance),
+            )
+            .route("/instances/defaults", get(admin_get_instance_defaults))
+            .route("/instances/focus", post(admin_focus_instance_window))
+            .route("/instances/open-folder", post(admin_open_instance_folder))
+            .route(
+                "/instances/:instanceId",
+                patch(admin_update_instance).delete(admin_delete_instance),
+            )
+            .route("/instances/:instanceId/start", post(admin_start_instance))
+            .route("/instances/:instanceId/stop", post(admin_stop_instance))
             .route("/proxy/stats", get(admin_get_proxy_stats))
             .route("/logs", get(admin_get_proxy_logs_filtered))
             .route("/logs/count", get(admin_get_proxy_logs_count_filtered))
@@ -4844,6 +4858,153 @@ async fn admin_get_droid_config_content(
                 Json(ErrorResponse { error: e }),
             )
         })
+}
+
+// ============================================================================
+// Instances Admin Handlers
+// ============================================================================
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminCreateInstanceRequest {
+    name: String,
+    user_data_dir: String,
+    working_dir: Option<String>,
+    extra_args: Option<String>,
+    bind_account_id: Option<String>,
+    copy_source_instance_id: Option<String>,
+    init_mode: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminUpdateInstanceRequest {
+    name: Option<String>,
+    working_dir: Option<String>,
+    extra_args: Option<String>,
+    bind_account_id: Option<Option<String>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminFocusWindowRequest {
+    pid: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminOpenFolderRequest {
+    user_data_dir: String,
+}
+
+async fn admin_get_instance_defaults(
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    crate::modules::instance_manager::get_instance_defaults()
+        .map(Json)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse { error: e }),
+            )
+        })
+}
+
+async fn admin_list_instances() -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    crate::modules::instance_manager::list_instances()
+        .map(Json)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse { error: e }),
+            )
+        })
+}
+
+async fn admin_create_instance(
+    Json(payload): Json<AdminCreateInstanceRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    crate::modules::instance_manager::create_instance(
+        payload.name,
+        payload.user_data_dir,
+        payload.working_dir,
+        payload.extra_args,
+        payload.bind_account_id,
+        payload.copy_source_instance_id,
+        payload.init_mode,
+    )
+    .map(Json)
+    .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))
+}
+
+async fn admin_update_instance(
+    axum::extract::Path(instance_id): axum::extract::Path<String>,
+    Json(payload): Json<AdminUpdateInstanceRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    crate::modules::instance_manager::update_instance(
+        instance_id,
+        payload.name,
+        payload.working_dir,
+        payload.extra_args,
+        payload.bind_account_id,
+    )
+    .map(Json)
+    .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))
+}
+
+async fn admin_delete_instance(
+    axum::extract::Path(instance_id): axum::extract::Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    crate::modules::instance_manager::delete_instance(&instance_id, false)
+        .map(|_| StatusCode::NO_CONTENT)
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))
+}
+
+async fn admin_start_instance(
+    axum::extract::Path(instance_id): axum::extract::Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    crate::modules::instance_manager::start_instance(&instance_id)
+        .map(Json)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse { error: e }),
+            )
+        })
+}
+
+async fn admin_stop_instance(
+    axum::extract::Path(instance_id): axum::extract::Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    crate::modules::instance_manager::stop_instance(&instance_id)
+        .map(|_| StatusCode::NO_CONTENT)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse { error: e }),
+            )
+        })
+}
+
+async fn admin_focus_instance_window(
+    Json(payload): Json<AdminFocusWindowRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    crate::modules::instance_manager::focus_instance_window(payload.pid)
+        .map(|_| StatusCode::OK)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse { error: e }),
+            )
+        })
+}
+
+async fn admin_open_instance_folder(
+    Json(payload): Json<AdminOpenFolderRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    crate::commands::instance::open_instance_folder(payload.user_data_dir)
+        .await
+        .map(|_| StatusCode::OK)
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))
 }
 
 #[cfg(test)]

@@ -49,6 +49,7 @@ export default function Instances() {
   const [editModalInstance, setEditModalInstance] = useState<InstanceProfileView | null>(null);
   const [deleteModalInstance, setDeleteModalInstance] = useState<InstanceProfileView | null>(null);
   const [deleteRemoveFiles, setDeleteRemoveFiles] = useState(false);
+  const [webNoticeOpen, setWebNoticeOpen] = useState(false);
 
   // 复制反馈
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -248,7 +249,11 @@ export default function Instances() {
       showToast(t('instances.start_success', '已触发启动指令，正在启动 Antigravity IDE...'), 'success');
       await loadData(true);
     } catch (err: any) {
-      showToast(t('instances.start_error', '启动失败: ') + String(err), 'error');
+      if (!isTauri()) {
+        setWebNoticeOpen(true);
+      } else {
+        showToast(t('instances.start_error', '启动失败: ') + String(err), 'error');
+      }
     } finally {
       setActionLoadingId(null);
     }
@@ -340,6 +345,22 @@ export default function Instances() {
           </button>
         </div>
       </div>
+
+      {/* 纯网页端环境提示 */}
+      {!isTauri() && (
+        <div className="alert bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 rounded-2xl flex items-start gap-3 p-4">
+          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-blue-500" />
+          <div className="text-xs leading-relaxed space-y-1">
+            <div className="font-bold text-sm">浏览器网页运行模式提示</div>
+            <div>
+              您当前运行在纯前端网页开发模式（未运行桌面客户端程序）。受浏览器安全沙箱限制，纯网页无法直接调用操作系统命令启动本地桌面 exe 程序。
+            </div>
+            <div className="opacity-80">
+              👉 若要真正唤起 Antigravity IDE 实例窗口，请在终端运行 <code className="px-1.5 py-0.5 bg-blue-500/10 rounded font-mono">npm run tauri dev</code>（或直接启动已编译的客户端 exe）。
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 状态统计卡片 */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -964,6 +985,67 @@ export default function Instances() {
             <div
               className="modal-backdrop bg-black/40 backdrop-blur-sm fixed inset-0 z-[-1]"
               onClick={() => setDeleteModalInstance(null)}
+            />
+          </div>,
+          document.body
+        )}
+
+      {/* 纯网页端唤起提示对话框 */}
+      {webNoticeOpen &&
+        createPortal(
+          <div className="modal modal-open z-[100]">
+            <div data-tauri-drag-region className="fixed top-0 left-0 right-0 h-8 z-[110]" />
+            <div className="modal-box relative max-w-md bg-base-100 shadow-2xl rounded-2xl p-6 border border-base-300">
+              <div className="flex items-center justify-between pb-3 border-b border-base-200">
+                <div className="flex items-center gap-2 text-warning">
+                  <AlertCircle className="w-5 h-5" />
+                  <h3 className="text-base font-bold text-base-content">
+                    纯网页端唤起限制说明
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setWebNoticeOpen(false)}
+                  className="btn btn-ghost btn-xs btn-square"
+                >
+                  <X className="w-4 h-4 text-base-content/60" />
+                </button>
+              </div>
+
+              <div className="space-y-3 py-4 text-xs text-base-content/80 leading-relaxed">
+                <p>
+                  您刚才点击了<strong>「启动实例」</strong>，但当前仅运行了纯浏览器网页（<code>npm run dev</code>），未启动本地桌面客户端后端程序。
+                </p>
+                <div className="p-3 bg-base-200/60 rounded-xl space-y-1.5">
+                  <div className="font-semibold text-base-content">为什么会报 404？</div>
+                  <p className="text-base-content/70">
+                    浏览器是一个安全沙箱，网页代码<strong>绝对无法直接跨过沙箱去启动您 Windows 电脑上的任何 exe 应用程序</strong>。多开进程的启动必须由具有本地权限的客户端（Tauri 后端）执行。
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="font-semibold text-base-content">如何真正唤起 Antigravity IDE：</div>
+                  <ol className="list-decimal list-inside space-y-1 text-base-content/70">
+                    <li>打开终端进入项目根目录；</li>
+                    <li>运行桌面客户端：<code className="px-1.5 py-0.5 bg-base-200 rounded font-mono">npm run tauri dev</code>（或双击运行已安装的客户端程序）；</li>
+                    <li>在桌面端界面中点击「启动实例」，即可调用系统指令拉起独立 IDE 窗口。</li>
+                  </ol>
+                </div>
+              </div>
+
+              <div className="modal-action pt-2 border-t border-base-200">
+                <button
+                  type="button"
+                  onClick={() => setWebNoticeOpen(false)}
+                  className="btn btn-primary btn-sm w-full"
+                >
+                  我知道了
+                </button>
+              </div>
+            </div>
+            <div
+              className="modal-backdrop bg-black/40 backdrop-blur-sm fixed inset-0 z-[-1]"
+              onClick={() => setWebNoticeOpen(false)}
             />
           </div>,
           document.body
