@@ -30,6 +30,7 @@ import type {
 } from '../types/instance';
 import * as instanceService from '../services/instanceService';
 import { cn } from '../utils/cn';
+import { isTauri } from '../utils/env';
 
 export default function Instances() {
   const { t } = useTranslation();
@@ -72,8 +73,44 @@ export default function Instances() {
       setInstances(list);
       setDefaults(defs);
     } catch (err: any) {
-      console.error('加载实例失败:', err);
-      showToast(t('instances.load_failed', '加载实例失败: ') + String(err), 'error');
+      console.warn('加载实例失败 (若在纯网页端模式未启动后端，将使用预览数据):', err);
+      if (!isTauri()) {
+        // 纯网页端预览降级回退
+        setDefaults({
+          rootDir: 'D:/Antigravity/instances',
+          defaultUserDataDir: 'C:/Users/User/AppData/Roaming/Antigravity',
+        });
+        setInstances([
+          {
+            id: '__default__',
+            name: '默认实例 (Default)',
+            userDataDir: 'C:/Users/User/AppData/Roaming/Antigravity',
+            extraArgs: '',
+            bindAccountId: null,
+            createdAt: 0,
+            lastLaunchedAt: Date.now() - 3600000,
+            lastPid: 12340,
+            running: true,
+            initialized: true,
+            isDefault: true,
+          },
+          {
+            id: 'mock-1',
+            name: '开发环境 (Workspace-1)',
+            userDataDir: 'D:/Antigravity/instances/Workspace-1',
+            extraArgs: '--disable-gpu',
+            bindAccountId: null,
+            createdAt: Date.now() - 86400000,
+            lastLaunchedAt: null,
+            lastPid: null,
+            running: false,
+            initialized: true,
+            isDefault: false,
+          },
+        ]);
+      } else {
+        showToast(t('instances.load_failed', '加载实例失败: ') + String(err), 'error');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

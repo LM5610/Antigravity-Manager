@@ -193,6 +193,17 @@ const COMMAND_MAPPING: Record<string, { url: string; method: 'GET' | 'POST' | 'D
   'bind_account_proxy': { url: '/api/proxy/pool/bind', method: 'POST' },
   'unbind_account_proxy': { url: '/api/proxy/pool/unbind', method: 'POST' },
   'get_account_proxy_binding': { url: '/api/proxy/pool/binding/:accountId', method: 'GET' },
+
+  // Instances
+  'get_instance_defaults': { url: '/api/instances/defaults', method: 'GET' },
+  'list_instances': { url: '/api/instances', method: 'GET' },
+  'create_instance': { url: '/api/instances', method: 'POST' },
+  'update_instance': { url: '/api/instances', method: 'PATCH' },
+  'delete_instance': { url: '/api/instances/:instanceId', method: 'DELETE' },
+  'start_instance': { url: '/api/instances/:instanceId/start', method: 'POST' },
+  'stop_instance': { url: '/api/instances/:instanceId/stop', method: 'POST' },
+  'focus_instance_window': { url: '/api/instances/focus', method: 'POST' },
+  'open_instance_folder': { url: '/api/instances/open-folder', method: 'POST' },
 };
 
 export async function request<T>(cmd: string, args?: any): Promise<T> {
