@@ -1,4 +1,4 @@
-import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate, useRouteError } from 'react-router-dom';
 
 import Layout from './components/layout/Layout';
 import Dashboard from './pages/Dashboard';
@@ -27,11 +27,32 @@ import { AdminAuthGuard } from './components/common/AdminAuthGuard';
 import MiniView from './components/layout/MiniView';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
+function RouteErrorBoundary() {
+  const error: any = useRouteError();
+  console.error('[Router Error Boundary]:', error);
+  return (
+    <div className="p-8 max-w-xl mx-auto my-12 bg-base-100 border border-error/30 rounded-2xl shadow-lg space-y-4">
+      <h2 className="text-xl font-bold text-error">页面加载遇到问题</h2>
+      <pre className="p-3 bg-base-200 rounded-xl text-xs overflow-x-auto text-base-content/80 font-mono">
+        {String(error?.message || error?.statusText || error || 'Unknown Error')}
+      </pre>
+      <div className="flex gap-3">
+        <button onClick={() => window.location.reload()} className="btn btn-sm btn-primary">
+          刷新重试
+        </button>
+        <button onClick={() => window.location.href = '#/'} className="btn btn-sm btn-ghost">
+          返回主界面
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const router = createBrowserRouter([
   {
     path: '/',
     element: <Layout />,
-    errorElement: <Navigate to="/" replace />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       {
         index: true,

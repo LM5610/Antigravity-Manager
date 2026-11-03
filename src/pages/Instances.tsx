@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Layers,
   Play,
@@ -16,11 +17,11 @@ import {
   FolderTree,
   AlertCircle,
   Sparkles,
+  X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { showToast } from '../components/common/ToastContainer';
-import ModalDialog from '../components/common/ModalDialog';
 import { useAccountStore } from '../stores/useAccountStore';
 import type {
   CreateInstanceParams,
@@ -31,6 +32,7 @@ import type {
 import * as instanceService from '../services/instanceService';
 import { cn } from '../utils/cn';
 import { isTauri } from '../utils/env';
+import { copyToClipboard } from '../utils/clipboard';
 
 export default function Instances() {
   const { t } = useTranslation();
@@ -61,6 +63,20 @@ export default function Instances() {
     initMode: 'copy',
   });
 
+  // 安全获取账号列表
+  const safeAccounts = useMemo(() => {
+    return Array.isArray(accounts) ? accounts.filter((a) => a && a.id) : [];
+  }, [accounts]);
+
+  // 账号查找辅助
+  const accountMap = useMemo(() => {
+    const map = new Map<string, string>();
+    safeAccounts.forEach((a) => {
+      map.set(a.id, a.email || a.id);
+    });
+    return map;
+  }, [safeAccounts]);
+
   // 加载数据
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -70,8 +86,8 @@ export default function Instances() {
         instanceService.listInstances(),
         instanceService.getInstanceDefaults(),
       ]);
-      setInstances(list);
-      setDefaults(defs);
+      setInstances(Array.isArray(list) ? list : []);
+      setDefaults(defs || null);
     } catch (err: any) {
       console.warn('加载实例失败 (若在纯网页端模式未启动后端，将使用预览数据):', err);
       if (!isTauri()) {
@@ -119,7 +135,9 @@ export default function Instances() {
 
   useEffect(() => {
     loadData();
-    fetchAccounts();
+    if (typeof fetchAccounts === 'function') {
+      fetchAccounts().catch(() => {});
+    }
 
     // 5秒自动定时轮询刷新运行状态（PID）
     const timer = setInterval(() => {
@@ -130,7 +148,7 @@ export default function Instances() {
 
   // 准备新建实例表单
   const handleOpenCreate = () => {
-    const nextIndex = instances.filter((i) => !i.isDefault).length + 1;
+    const nextIndex = (instances || []).filter((i) => !i.isDefault).length + 1;
     const initialName = `Workspace-${nextIndex}`;
     const initialDir = defaults?.rootDir
       ? `${defaults.rootDir.replace(/\\/g, '/')}/${initialName}`
@@ -270,20 +288,13 @@ export default function Instances() {
   };
 
   // 复制路径
-  const handleCopyPath = (id: string, text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 1800);
+  const handleCopyPath = async (id: string, text: string) => {
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1800);
+    }
   };
-
-  // 账号查找辅助
-  const accountMap = useMemo(() => {
-    const map = new Map<string, string>();
-    accounts.forEach((a) => {
-      map.set(a.id, a.email);
-    });
-    return map;
-  }, [accounts]);
 
   return (
     <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
@@ -556,9 +567,9 @@ export default function Instances() {
                   {/* 底部操作区 */}
                   <div className="pt-2 border-t border-base-200/60 flex items-center justify-between gap-3">
                     <div className="text-xs text-base-content/40">
-                      {instance.lastLaunchedAt
+                      {instance.lastLaunchedAt && !isNaN(Number(instance.lastLaunchedAt))
                         ? `${t('instances.last_launch', '最近启动')}: ${new Date(
-                            instance.lastLaunchedAt
+                            Number(instance.lastLaunchedAt)
                           ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                         : t('instances.never_launched', '尚未启动过')}
                     </div>
@@ -609,300 +620,354 @@ export default function Instances() {
         </div>
       )}
 
-      {/* 新建实例对话框 */}
-      <ModalDialog
-        isOpen={createModalOpen}
-        onClose={() => setCreateModalOpen(false)}
-        title={t('instances.modal_create_title', '创建 Antigravity 实例')}
-        size="md"
-      >
-        <div className="space-y-4 py-2">
-          {/* 实例名称 */}
-          <div>
-            <label className="label py-1">
-              <span className="label-text font-medium text-xs">
-                {t('instances.form_name', '实例名称')} <span className="text-error">*</span>
-              </span>
-            </label>
-            <input
-              type="text"
-              value={createForm.name}
-              onChange={(e) => handleNameChange(e.target.value)}
-              placeholder="e.g. Workspace-Dev, Claude-Testing"
-              className="input input-bordered input-sm w-full font-medium"
-            />
-          </div>
-
-          {/* 初始化模式 */}
-          <div>
-            <label className="label py-1">
-              <span className="label-text font-medium text-xs">
-                {t('instances.form_init_mode', '初始化模式')}
-              </span>
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setCreateForm((prev) => ({ ...prev, initMode: 'copy' }))}
-                className={cn(
-                  'p-3 rounded-xl border text-left flex flex-col gap-1 transition-all',
-                  createForm.initMode === 'copy'
-                    ? 'border-primary bg-primary/5 text-primary'
-                    : 'border-base-300 hover:bg-base-200/50 text-base-content'
-                )}
-              >
-                <div className="font-semibold text-xs flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  {t('instances.mode_copy', '克隆现有配置 (推荐)')}
+      {/* 新建实例对话框 (DaisyUI Portal) */}
+      {createModalOpen &&
+        createPortal(
+          <div className="modal modal-open z-[100]">
+            <div data-tauri-drag-region className="fixed top-0 left-0 right-0 h-8 z-[110]" />
+            <div className="modal-box relative max-w-lg bg-base-100 shadow-2xl rounded-2xl p-6 border border-base-300">
+              <div className="flex items-center justify-between pb-3 border-b border-base-200">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                    <Plus className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-lg font-bold text-base-content">
+                    {t('instances.modal_create_title', '创建 Antigravity IDE 实例')}
+                  </h3>
                 </div>
-                <div className="text-[11px] opacity-70">
-                  {t('instances.mode_copy_desc', '复制当前已安装的插件与设置，开箱即用')}
+                <button
+                  type="button"
+                  onClick={() => setCreateModalOpen(false)}
+                  className="btn btn-ghost btn-xs btn-square"
+                >
+                  <X className="w-4 h-4 text-base-content/60" />
+                </button>
+              </div>
+
+              <div className="space-y-4 py-4">
+                {/* 实例名称 */}
+                <div>
+                  <label className="label py-1">
+                    <span className="label-text font-medium text-xs">
+                      {t('instances.form_name', '实例名称')} <span className="text-error">*</span>
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    value={createForm.name}
+                    onChange={(e) => handleNameChange(e.target.value)}
+                    placeholder="e.g. Workspace-Dev, Claude-Testing"
+                    className="input input-bordered input-sm w-full font-medium"
+                  />
                 </div>
-              </button>
 
-              <button
-                type="button"
-                onClick={() => setCreateForm((prev) => ({ ...prev, initMode: 'empty' }))}
-                className={cn(
-                  'p-3 rounded-xl border text-left flex flex-col gap-1 transition-all',
-                  createForm.initMode === 'empty'
-                    ? 'border-primary bg-primary/5 text-primary'
-                    : 'border-base-300 hover:bg-base-200/50 text-base-content'
-                )}
-              >
-                <div className="font-semibold text-xs flex items-center gap-1.5">
-                  <FolderTree className="w-3.5 h-3.5" />
-                  {t('instances.mode_empty', '全新纯净空白')}
+                {/* 初始化模式 */}
+                <div>
+                  <label className="label py-1">
+                    <span className="label-text font-medium text-xs">
+                      {t('instances.form_init_mode', '初始化模式')}
+                    </span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCreateForm((prev) => ({ ...prev, initMode: 'copy' }))}
+                      className={cn(
+                        'p-3 rounded-xl border text-left flex flex-col gap-1 transition-all',
+                        createForm.initMode === 'copy'
+                          ? 'border-primary bg-primary/5 text-primary'
+                          : 'border-base-300 hover:bg-base-200/50 text-base-content'
+                      )}
+                    >
+                      <div className="font-semibold text-xs flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        {t('instances.mode_copy', '克隆现有配置 (推荐)')}
+                      </div>
+                      <div className="text-[11px] opacity-70">
+                        {t('instances.mode_copy_desc', '复制当前已安装的插件与设置，开箱即用')}
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCreateForm((prev) => ({ ...prev, initMode: 'empty' }))}
+                      className={cn(
+                        'p-3 rounded-xl border text-left flex flex-col gap-1 transition-all',
+                        createForm.initMode === 'empty'
+                          ? 'border-primary bg-primary/5 text-primary'
+                          : 'border-base-300 hover:bg-base-200/50 text-base-content'
+                      )}
+                    >
+                      <div className="font-semibold text-xs flex items-center gap-1.5">
+                        <FolderTree className="w-3.5 h-3.5" />
+                        {t('instances.mode_empty', '全新纯净空白')}
+                      </div>
+                      <div className="text-[11px] opacity-70">
+                        {t('instances.mode_empty_desc', '创建空白数据目录，零插件无污染沙箱')}
+                      </div>
+                    </button>
+                  </div>
                 </div>
-                <div className="text-[11px] opacity-70">
-                  {t('instances.mode_empty_desc', '创建空白数据目录，零插件无污染沙箱')}
+
+                {/* 数据目录 */}
+                <div>
+                  <label className="label py-1">
+                    <span className="label-text font-medium text-xs">
+                      {t('instances.form_dir', '数据目录 (User Data Dir)')} <span className="text-error">*</span>
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    value={createForm.userDataDir}
+                    onChange={(e) => setCreateForm((prev) => ({ ...prev, userDataDir: e.target.value }))}
+                    placeholder="e.g. C:/Users/.../instances/Workspace-1"
+                    className="input input-bordered input-sm w-full font-mono text-xs"
+                  />
+                  <span className="text-[11px] text-base-content/50 mt-1 block">
+                    {t(
+                      'instances.form_dir_hint',
+                      '每个实例独占此目录，Electron 单例锁与配置均在此目录隔离'
+                    )}
+                  </span>
                 </div>
-              </button>
-            </div>
-          </div>
 
-          {/* 数据目录 */}
-          <div>
-            <label className="label py-1">
-              <span className="label-text font-medium text-xs">
-                {t('instances.form_dir', '数据目录 (User Data Dir)')} <span className="text-error">*</span>
-              </span>
-            </label>
-            <input
-              type="text"
-              value={createForm.userDataDir}
-              onChange={(e) => setCreateForm((prev) => ({ ...prev, userDataDir: e.target.value }))}
-              placeholder="e.g. C:/Users/.../instances/Workspace-1"
-              className="input input-bordered input-sm w-full font-mono text-xs"
-            />
-            <span className="text-[11px] text-base-content/50 mt-1 block">
-              {t(
-                'instances.form_dir_hint',
-                '每个实例独占此目录，Electron 单例锁与配置均在此目录隔离'
-              )}
-            </span>
-          </div>
+                {/* 绑定账号 */}
+                <div>
+                  <label className="label py-1">
+                    <span className="label-text font-medium text-xs">
+                      {t('instances.form_bind_account', '自动登录绑定账号 (可选)')}
+                    </span>
+                  </label>
+                  <select
+                    value={createForm.bindAccountId || ''}
+                    onChange={(e) =>
+                      setCreateForm((prev) => ({ ...prev, bindAccountId: e.target.value || undefined }))
+                    }
+                    className="select select-bordered select-sm w-full text-xs"
+                  >
+                    <option value="">{t('instances.select_no_bind', '-- 不绑定 (由 IDE 内登录) --')}</option>
+                    {safeAccounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.email || acc.id} {acc?.token?.is_gcp_tos ? '(Enterprise)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[11px] text-base-content/50 mt-1 block">
+                    {t('instances.form_bind_hint', '启动实例前将直接把该账号凭据写入该实例数据库，免扫码自动登录')}
+                  </span>
+                </div>
 
-          {/* 绑定账号 */}
-          <div>
-            <label className="label py-1">
-              <span className="label-text font-medium text-xs">
-                {t('instances.form_bind_account', '自动登录绑定账号 (可选)')}
-              </span>
-            </label>
-            <select
-              value={createForm.bindAccountId || ''}
-              onChange={(e) =>
-                setCreateForm((prev) => ({ ...prev, bindAccountId: e.target.value || undefined }))
-              }
-              className="select select-bordered select-sm w-full text-xs"
-            >
-              <option value="">{t('instances.select_no_bind', '-- 不绑定 (由 IDE 内登录) --')}</option>
-              {accounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.email} ({acc.token.is_gcp_tos ? 'Enterprise' : 'Standard'})
-                </option>
-              ))}
-            </select>
-            <span className="text-[11px] text-base-content/50 mt-1 block">
-              {t('instances.form_bind_hint', '启动实例前将直接把该账号凭据写入该实例数据库，免扫码自动登录')}
-            </span>
-          </div>
+                {/* 启动参数 */}
+                <div>
+                  <label className="label py-1">
+                    <span className="label-text font-medium text-xs">
+                      {t('instances.form_extra_args', '附加启动参数 (可选)')}
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    value={createForm.extraArgs || ''}
+                    onChange={(e) => setCreateForm((prev) => ({ ...prev, extraArgs: e.target.value }))}
+                    placeholder="e.g. --disable-gpu --no-sandbox"
+                    className="input input-bordered input-sm w-full font-mono text-xs"
+                  />
+                </div>
+              </div>
 
-          {/* 启动参数 */}
-          <div>
-            <label className="label py-1">
-              <span className="label-text font-medium text-xs">
-                {t('instances.form_extra_args', '附加启动参数 (可选)')}
-              </span>
-            </label>
-            <input
-              type="text"
-              value={createForm.extraArgs || ''}
-              onChange={(e) => setCreateForm((prev) => ({ ...prev, extraArgs: e.target.value }))}
-              placeholder="e.g. --disable-gpu --no-sandbox"
-              className="input input-bordered input-sm w-full font-mono text-xs"
-            />
-          </div>
-
-          {/* 对话框按钮 */}
-          <div className="modal-action pt-4 border-t border-base-200">
-            <button
-              type="button"
-              onClick={() => setCreateModalOpen(false)}
-              className="btn btn-ghost btn-sm"
-            >
-              {t('common.cancel', '取消')}
-            </button>
-            <button
-              type="button"
-              onClick={handleCreateSubmit}
-              disabled={actionLoadingId === 'create'}
-              className="btn btn-primary btn-sm gap-2"
-            >
-              {actionLoadingId === 'create' && <span className="loading loading-spinner loading-xs"></span>}
-              {t('common.confirm', '确认创建')}
-            </button>
-          </div>
-        </div>
-      </ModalDialog>
-
-      {/* 编辑实例对话框 */}
-      <ModalDialog
-        isOpen={!!editModalInstance}
-        onClose={() => setEditModalInstance(null)}
-        title={t('instances.modal_edit_title', '编辑实例配置')}
-        size="md"
-      >
-        {editModalInstance && (
-          <div className="space-y-4 py-2">
-            <div>
-              <label className="label py-1">
-                <span className="label-text font-medium text-xs">
-                  {t('instances.form_name', '实例名称')}
-                </span>
-              </label>
-              <input
-                type="text"
-                disabled={editModalInstance.isDefault}
-                value={editModalInstance.name}
-                onChange={(e) =>
-                  setEditModalInstance((prev) => (prev ? { ...prev, name: e.target.value } : null))
-                }
-                className="input input-bordered input-sm w-full font-medium"
-              />
-            </div>
-
-            <div>
-              <label className="label py-1">
-                <span className="label-text font-medium text-xs">
-                  {t('instances.form_bind_account', '绑定账号')}
-                </span>
-              </label>
-              <select
-                value={editModalInstance.bindAccountId || ''}
-                onChange={(e) =>
-                  setEditModalInstance((prev) =>
-                    prev ? { ...prev, bindAccountId: e.target.value || null } : null
-                  )
-                }
-                className="select select-bordered select-sm w-full text-xs"
-              >
-                <option value="">{t('instances.select_no_bind', '-- 不绑定 --')}</option>
-                {accounts.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.email}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="label py-1">
-                <span className="label-text font-medium text-xs">
-                  {t('instances.form_extra_args', '附加启动参数')}
-                </span>
-              </label>
-              <input
-                type="text"
-                value={editModalInstance.extraArgs || ''}
-                onChange={(e) =>
-                  setEditModalInstance((prev) =>
-                    prev ? { ...prev, extraArgs: e.target.value } : null
-                  )
-                }
-                placeholder="--disable-gpu"
-                className="input input-bordered input-sm w-full font-mono text-xs"
-              />
-            </div>
-
-            <div className="modal-action pt-4 border-t border-base-200">
-              <button
-                type="button"
-                onClick={() => setEditModalInstance(null)}
-                className="btn btn-ghost btn-sm"
-              >
-                {t('common.cancel', '取消')}
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveEdit}
-                className="btn btn-primary btn-sm"
-              >
-                {t('common.save', '保存更改')}
-              </button>
-            </div>
-          </div>
-        )}
-      </ModalDialog>
-
-      {/* 删除确认对话框 */}
-      <ModalDialog
-        isOpen={!!deleteModalInstance}
-        onClose={() => setDeleteModalInstance(null)}
-        title={t('instances.modal_delete_title', '确认删除实例')}
-        size="sm"
-      >
-        {deleteModalInstance && (
-          <div className="space-y-4 py-2">
-            <div className="flex items-start gap-3 text-warning">
-              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-              <div className="text-xs text-base-content/80 leading-relaxed">
-                {t('instances.delete_confirm_desc', '确定要移除实例')} <strong>"{deleteModalInstance.name}"</strong> {t('instances.delete_confirm_tail', '吗？此操作将从列表中注销该多开实例。')}
+              {/* 对话框按钮 */}
+              <div className="modal-action pt-4 border-t border-base-200">
+                <button
+                  type="button"
+                  onClick={() => setCreateModalOpen(false)}
+                  className="btn btn-ghost btn-sm"
+                >
+                  {t('common.cancel', '取消')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateSubmit}
+                  disabled={actionLoadingId === 'create'}
+                  className="btn btn-primary btn-sm gap-2"
+                >
+                  {actionLoadingId === 'create' && <span className="loading loading-spinner loading-xs"></span>}
+                  {t('common.confirm', '确认创建')}
+                </button>
               </div>
             </div>
-
-            <label className="label cursor-pointer justify-start gap-2.5 p-2 rounded-xl bg-base-200/50 border border-base-200">
-              <input
-                type="checkbox"
-                checked={deleteRemoveFiles}
-                onChange={(e) => setDeleteRemoveFiles(e.target.checked)}
-                className="checkbox checkbox-error checkbox-xs"
-              />
-              <span className="label-text text-xs text-error font-medium">
-                {t('instances.delete_files_label', '同时永久删除该实例的数据文件夹 (不可撤销)')}
-              </span>
-            </label>
-
-            <div className="modal-action pt-4 border-t border-base-200">
-              <button
-                type="button"
-                onClick={() => setDeleteModalInstance(null)}
-                className="btn btn-ghost btn-sm"
-              >
-                {t('common.cancel', '取消')}
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                className="btn btn-error btn-sm"
-              >
-                {t('common.delete', '确认删除')}
-              </button>
-            </div>
-          </div>
+            <div
+              className="modal-backdrop bg-black/40 backdrop-blur-sm fixed inset-0 z-[-1]"
+              onClick={() => setCreateModalOpen(false)}
+            />
+          </div>,
+          document.body
         )}
-      </ModalDialog>
+
+      {/* 编辑实例对话框 (DaisyUI Portal) */}
+      {editModalInstance &&
+        createPortal(
+          <div className="modal modal-open z-[100]">
+            <div data-tauri-drag-region className="fixed top-0 left-0 right-0 h-8 z-[110]" />
+            <div className="modal-box relative max-w-md bg-base-100 shadow-2xl rounded-2xl p-6 border border-base-300">
+              <div className="flex items-center justify-between pb-3 border-b border-base-200">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-lg bg-base-200 text-base-content">
+                    <Settings2 className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-lg font-bold text-base-content">
+                    {t('instances.modal_edit_title', '编辑实例配置')}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditModalInstance(null)}
+                  className="btn btn-ghost btn-xs btn-square"
+                >
+                  <X className="w-4 h-4 text-base-content/60" />
+                </button>
+              </div>
+
+              <div className="space-y-4 py-4">
+                <div>
+                  <label className="label py-1">
+                    <span className="label-text font-medium text-xs">
+                      {t('instances.form_name', '实例名称')}
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    disabled={editModalInstance.isDefault}
+                    value={editModalInstance.name}
+                    onChange={(e) =>
+                      setEditModalInstance((prev) => (prev ? { ...prev, name: e.target.value } : null))
+                    }
+                    className="input input-bordered input-sm w-full font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="label py-1">
+                    <span className="label-text font-medium text-xs">
+                      {t('instances.form_bind_account', '绑定账号')}
+                    </span>
+                  </label>
+                  <select
+                    value={editModalInstance.bindAccountId || ''}
+                    onChange={(e) =>
+                      setEditModalInstance((prev) =>
+                        prev ? { ...prev, bindAccountId: e.target.value || null } : null
+                      )
+                    }
+                    className="select select-bordered select-sm w-full text-xs"
+                  >
+                    <option value="">{t('instances.select_no_bind', '-- 不绑定 --')}</option>
+                    {safeAccounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.email || acc.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="label py-1">
+                    <span className="label-text font-medium text-xs">
+                      {t('instances.form_extra_args', '附加启动参数')}
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editModalInstance.extraArgs || ''}
+                    onChange={(e) =>
+                      setEditModalInstance((prev) =>
+                        prev ? { ...prev, extraArgs: e.target.value } : null
+                      )
+                    }
+                    placeholder="--disable-gpu"
+                    className="input input-bordered input-sm w-full font-mono text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="modal-action pt-4 border-t border-base-200">
+                <button
+                  type="button"
+                  onClick={() => setEditModalInstance(null)}
+                  className="btn btn-ghost btn-sm"
+                >
+                  {t('common.cancel', '取消')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEdit}
+                  className="btn btn-primary btn-sm"
+                >
+                  {t('common.save', '保存更改')}
+                </button>
+              </div>
+            </div>
+            <div
+              className="modal-backdrop bg-black/40 backdrop-blur-sm fixed inset-0 z-[-1]"
+              onClick={() => setEditModalInstance(null)}
+            />
+          </div>,
+          document.body
+        )}
+
+      {/* 删除确认对话框 (DaisyUI Portal) */}
+      {deleteModalInstance &&
+        createPortal(
+          <div className="modal modal-open z-[100]">
+            <div data-tauri-drag-region className="fixed top-0 left-0 right-0 h-8 z-[110]" />
+            <div className="modal-box relative max-w-sm bg-base-100 shadow-2xl rounded-2xl p-6 border border-base-300">
+              <div className="flex items-center gap-3 text-warning mb-3">
+                <AlertCircle className="w-6 h-6 shrink-0" />
+                <h3 className="text-base font-bold text-base-content">
+                  {t('instances.modal_delete_title', '确认删除实例')}
+                </h3>
+              </div>
+
+              <div className="text-xs text-base-content/80 leading-relaxed mb-4">
+                {t('instances.delete_confirm_desc', '确定要移除实例')}{' '}
+                <strong>"{deleteModalInstance.name}"</strong>{' '}
+                {t('instances.delete_confirm_tail', '吗？此操作将从列表中注销该多开实例。')}
+              </div>
+
+              <label className="label cursor-pointer justify-start gap-2.5 p-2 rounded-xl bg-base-200/50 border border-base-200 mb-4">
+                <input
+                  type="checkbox"
+                  checked={deleteRemoveFiles}
+                  onChange={(e) => setDeleteRemoveFiles(e.target.checked)}
+                  className="checkbox checkbox-error checkbox-xs"
+                />
+                <span className="label-text text-xs text-error font-medium">
+                  {t('instances.delete_files_label', '同时永久删除该实例的数据文件夹 (不可撤销)')}
+                </span>
+              </label>
+
+              <div className="modal-action pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDeleteModalInstance(null)}
+                  className="btn btn-ghost btn-sm"
+                >
+                  {t('common.cancel', '取消')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  className="btn btn-error btn-sm"
+                >
+                  {t('common.delete', '确认删除')}
+                </button>
+              </div>
+            </div>
+            <div
+              className="modal-backdrop bg-black/40 backdrop-blur-sm fixed inset-0 z-[-1]"
+              onClick={() => setDeleteModalInstance(null)}
+            />
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
