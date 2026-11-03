@@ -19,6 +19,9 @@ pub mod user_token;
 // 导出 patch 命令
 pub mod patch;
 pub use patch::*;
+// 导出 instance 命令
+pub mod instance;
+pub use instance::*;
 
 /// 列出所有账号
 #[tauri::command]

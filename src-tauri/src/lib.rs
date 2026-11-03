@@ -713,6 +713,16 @@ pub fn run() {
             // Account management commands
             commands::list_accounts,
             commands::add_account,
+            // Instance management commands
+            commands::get_instance_defaults,
+            commands::list_instances,
+            commands::create_instance,
+            commands::update_instance,
+            commands::delete_instance,
+            commands::start_instance,
+            commands::stop_instance,
+            commands::focus_instance_window,
+            commands::open_instance_folder,
             commands::batch_import_accounts,
             commands::delete_account,
             commands::delete_accounts,

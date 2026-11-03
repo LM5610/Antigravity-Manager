@@ -68,6 +68,7 @@
     "nav": {
         "dashboard": "仪表盘",
         "accounts": "账号管理",
+        "instances": "IDE 多开",
         "proxy": "API 反代",
         "call_records": "流量日志",
         "token_stats": "Token 统计",

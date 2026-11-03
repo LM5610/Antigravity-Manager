@@ -11,6 +11,7 @@ pub mod device;
 pub mod http_api;
 pub mod hub_version;
 pub mod i18n;
+pub mod instance_manager;
 pub mod integration;
 pub mod lightweight;
 pub mod log_bridge;
